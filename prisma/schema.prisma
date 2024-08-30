@@ -1,0 +1,85 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum UserType {
+  USER
+  ADMIN
+}
+
+model Permission {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  role           Role               @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId         String             @db.ObjectId
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([name, roleId], name: "name_roleId")
+}
+
+model Role {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  type           UserType           @unique
+  permissions    Permission[]
+  users          User[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+enum UserStatus {
+  NOT_VERIFIED
+  VERIFIED
+}
+
+model User {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  email          String
+  password       String?
+  role           Role               @relation(fields: [roleId], references: [id])
+  roleId         String             @db.ObjectId
+  status         UserStatus
+  refreshTokenSessions RefreshTokenSession[]
+  magicLinkSessions    MagicLinkSession[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([email, roleId], name: "email_roleId")
+}
+
+model RefreshTokenSession {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String             @db.ObjectId
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+enum MagicLinkType {
+  VERIFY_ACCOUNT
+  FORGOT_PASSWORD
+}
+
+model MagicLinkSession {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String             @db.ObjectId
+  type           MagicLinkType
+  sessionId      String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([type, userId], name: "type_userId")
+}
