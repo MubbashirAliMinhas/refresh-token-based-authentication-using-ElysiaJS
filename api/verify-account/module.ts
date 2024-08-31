@@ -8,66 +8,9 @@ import { errorMessage } from "@/utils/error-handler";
 import { UserTypeQueryDTO } from "../global-dtos/user-type.dto";
 import { v7 } from "uuid";
 import type { MagicLinkPayload } from "@/utils/other-token-handler";
-import { setUserDetails } from "@/utils/token-handler";
+import { checkRefreshToken, setUserDetails, verifyAccessToken } from "@/utils/token-handler";
 
 export const verifyAccountModule = new Elysia({ prefix: '/verify-account' })
-  .post('/email', async (c) => {
-    const data = c.body
-    const userType = c.query.user_type
-
-    const role = await prisma.role.findUnique({
-      where: { type: userType }
-    })
-
-    const user = await prisma.user.findUnique({
-      where: {
-        email_roleId: {
-          email: data.email,
-          roleId: role!.id
-        }
-      },
-    })
-
-    if (!user) {
-      throw errorMessage(404, 'Account does not exist.')
-    }
-
-    const name = user.name
-    const id = user.id
-
-    const sessionId = v7()
-
-    const token = jwt.sign(
-      { id, sessionId }, process.env.JWT_VERIFY_ACCOUNT_SECRET, { expiresIn: '1d' }
-    )
-    const verifyAccountLink = `${process.env.DOMAIN_URL}/verify-account?token=${token}`
-    const dynamicTemplateData = {
-      name,
-      verifyAccountLink,
-    }
-
-    await prisma.magicLinkSession.update({
-      where: {
-        type_userId: {
-          userId: user.id,
-          type: 'VERIFY_ACCOUNT'
-        }
-      },
-      data: { sessionId }
-    })
-
-    await emailService.sendMail(
-      data.email,
-      'Account verification',
-      process.env.SENDGRID_VERIFY_ACCOUNT_TEMPLATE,
-      dynamicTemplateData
-    )
-
-    return { message: 'Account verification request sent successfully.' }
-  }, {
-    body: EmailVerificationDTO,
-    query: UserTypeQueryDTO
-  })
   .patch('/verify', async (c) => {
     const token = c.headers.authorization.split(' ')[1]
 
@@ -113,13 +56,58 @@ export const verifyAccountModule = new Elysia({ prefix: '/verify-account' })
       data: { sessionId: null }
     })
 
-    const user_details = c.cookie.user_details.value
-
-    if (user_details) {
+    if (await checkRefreshToken(c)) {
       setUserDetails({ name: user.name, type: findUser.role.type, status: user.status }, c)
     }
 
     return { message: 'Account successfully verified!' }
   }, {
     headers: TokenVerificationDTO
+  })
+
+verifyAccountModule
+  .derive(verifyAccessToken)
+  .post('/email', async (c) => {
+    const user = await prisma.user.findUnique({
+      where: {
+        id: c.user.id
+      },
+    })
+
+    if (!user) {
+      throw errorMessage(404, 'Account does not exist.')
+    }
+
+    const name = user.name
+    const id = user.id
+
+    const sessionId = v7()
+
+    const token = jwt.sign(
+      { id, sessionId }, process.env.JWT_VERIFY_ACCOUNT_SECRET, { expiresIn: '1d' }
+    )
+    const verifyAccountLink = `${process.env.DOMAIN_URL}/verify-account?token=${token}`
+    const dynamicTemplateData = {
+      name,
+      verifyAccountLink,
+    }
+
+    await prisma.magicLinkSession.update({
+      where: {
+        type_userId: {
+          userId: user.id,
+          type: 'VERIFY_ACCOUNT'
+        }
+      },
+      data: { sessionId }
+    })
+
+    await emailService.sendMail(
+      user.email,
+      'Account verification',
+      process.env.SENDGRID_VERIFY_ACCOUNT_TEMPLATE,
+      dynamicTemplateData
+    )
+
+    return { message: 'Account verification request sent successfully.' }
   })

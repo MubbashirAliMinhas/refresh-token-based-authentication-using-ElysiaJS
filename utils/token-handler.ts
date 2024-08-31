@@ -109,6 +109,31 @@ export async function newTokenSet(c: Context) {
   await createTokenSet(refreshTokenSession.userId, c)
 }
 
+export async function checkRefreshToken(c: Context) {
+  const refreshToken = c.cookie.refresh_token.value
+
+  if (!refreshToken) {
+    return false
+  }
+
+  let payload: RefreshTokenPayload
+  try {
+    payload = verify(refreshToken, process.env.JWT_REFRESH_TOKEN_SECRET) as RefreshTokenPayload
+  } catch (e) {
+    return false
+  }
+   
+  const refreshTokenSession = await prisma.refreshTokenSession.findUnique({
+    where: { id: payload.id }
+  })
+
+  if (!refreshTokenSession) {
+    return false
+  }
+
+  return true
+}
+
 export async function verifyAccessToken(c: Context) {
   const accessToken = c.cookie.access_token
   if (!accessToken.value) {
@@ -122,7 +147,7 @@ export async function verifyAccessToken(c: Context) {
     throw errorMessage(401, 'Invalid access token.')
   }
 
-  return payload
+  return { user: payload }
 }
 
 export function setUserDetails(userDetails: any, c: Context) {
